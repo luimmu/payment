@@ -1,5 +1,7 @@
 import discord
+from discord.ext import commands, tasks
 import os
+import datetime
 
 PAYERS_FILE = "payers.txt"
 
@@ -18,7 +20,7 @@ def save_payers(user_ids):
 def get_ping_message():
     user_ids = load_payers()
     if not user_ids:
-        return "No payers set yet! Use /addpayer to set up the list."
+        return "No payers set yet! Use !addpayer @user to set up the list."
     mentions = " ".join([f"<@{uid}>" for uid in user_ids])
     return (
         f"{mentions}\n"
@@ -34,66 +36,60 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = discord.Client(intents=intents)
-tree = discord.app_commands.CommandTree(bot)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    await tree.sync()
-
-@tree.command(name="addpayer", description="Add a user to the payer ping list.")
-async def addpayer(interaction: discord.Interaction, user: discord.Member):
+@bot.command()
+async def addpayer(ctx, user: discord.Member):
     user_ids = load_payers()
     if user.id in user_ids:
-        await interaction.response.send_message(f"{user.mention} is already in the payer list.", ephemeral=True)
+        await ctx.send(f"{user.mention} is already in the payer list.")
         return
     user_ids.append(user.id)
     save_payers(user_ids)
-    await interaction.response.send_message(f"Added {user.mention} to the payer list.", ephemeral=False)
+    await ctx.send(f"Added {user.mention} to the payer list.")
 
-@tree.command(name="removepayer", description="Remove a user from the payer ping list.")
-async def removepayer(interaction: discord.Interaction, user: discord.Member):
+@bot.command()
+async def removepayer(ctx, user: discord.Member):
     user_ids = load_payers()
     if user.id not in user_ids:
-        await interaction.response.send_message(f"{user.mention} is not in the payer list.", ephemeral=True)
+        await ctx.send(f"{user.mention} is not in the payer list.")
         return
     user_ids.remove(user.id)
     save_payers(user_ids)
-    await interaction.response.send_message(f"Removed {user.mention} from the payer list.", ephemeral=False)
+    await ctx.send(f"Removed {user.mention} from the payer list.")
 
-@tree.command(name="listpayers", description="List the current payers who will be pinged.")
-async def listpayers(interaction: discord.Interaction):
+@bot.command()
+async def listpayers(ctx):
     user_ids = load_payers()
     if not user_ids:
-        await interaction.response.send_message("No payers in the list.", ephemeral=True)
+        await ctx.send("No payers in the list.")
         return
     mentions = " ".join([f"<@{uid}>" for uid in user_ids])
-    await interaction.response.send_message(f"Current payers: {mentions}", ephemeral=False)
+    await ctx.send(f"Current payers: {mentions}")
 
-@tree.command(name="remindnow", description="Send a payment reminder ping to payers.")
-async def remindnow(interaction: discord.Interaction):
+@bot.command()
+async def remindnow(ctx):
     channel = bot.get_channel(CHANNEL_ID)
     if channel:
         msg = await channel.send(get_ping_message())
         await msg.add_reaction(PAYMENT_EMOJI)
-        await interaction.response.send_message("Reminder sent to selected users!", ephemeral=False)
+        await ctx.send("Reminder sent to selected users!")
 
-@tree.command(name="help", description="Show all payment bot commands.")
-async def help_command(interaction: discord.Interaction):
+@bot.command()
+async def help(ctx):
     help_text = (
-        "**Payment Bot Slash Commands:**\n"
-        "`/addpayer @user` — Add a user to the payer ping list.\n"
-        "`/removepayer @user` — Remove a user from the payer ping list.\n"
-        "`/listpayers` — List the current payers who will be pinged.\n"
-        "`/remindnow` — Send a payment reminder ping to payers.\n"
-        "`/checkpayments` — Check who has confirmed their payments.\n"
-        "`/help` — Show this help message."
+        "**Payment Bot Commands:**\n"
+        "!addpayer @user — Add a user to the payer ping list.\n"
+        "!removepayer @user — Remove a user from the payer ping list.\n"
+        "!listpayers — List the current payers who will be pinged.\n"
+        "!remindnow — Send a payment reminder ping to payers.\n"
+        "!help — Show this help message.\n"
+        "!checkpayments — Check who has confirmed their payments."
     )
-    await interaction.response.send_message(help_text, ephemeral=True)
+    await ctx.send(help_text)
 
-@tree.command(name="checkpayments", description="Check who has confirmed their payments (reacted with ✅).")
-async def checkpayments(interaction: discord.Interaction):
+@bot.command()
+async def checkpayments(ctx):
     channel = bot.get_channel(CHANNEL_ID)
     async for message in channel.history(limit=20):
         if message.author == bot.user and "Monthly Reminder" in message.content:
@@ -102,10 +98,11 @@ async def checkpayments(interaction: discord.Interaction):
                     users = [user async for user in reaction.users() if not user.bot]
                     if users:
                         lines = [f"• {user.name}#{user.discriminator}" for user in users]
-                        await interaction.response.send_message("**Confirmed Payments:**\n" + "\n".join(lines), ephemeral=False)
+                        await ctx.send("**Confirmed Payments:**\n" + "\n".join(lines))
                     else:
-                        await interaction.response.send_message("No payments confirmed yet.", ephemeral=False)
+                        await ctx.send("No payments confirmed yet.")
                     return
-    await interaction.response.send_message("No recent reminder found or no reactions yet.", ephemeral=False)
+    await ctx.send("No recent reminder found or no reactions yet.")
+
 
 bot.run(TOKEN)
